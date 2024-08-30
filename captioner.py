@@ -71,7 +71,6 @@ def make_langchain_call(image_path: str, prefix: str, prefix_type: str, mode: st
 
     model = ChatOpenAI(model=model_name)
     response = model.invoke(prompt.format_messages())
-    print("Prompt: ", prompt.format_messages())
     return response.content
 
 def sanitize_filename(filename: str):
