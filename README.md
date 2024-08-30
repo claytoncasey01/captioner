@@ -32,7 +32,7 @@ This Python script processes a folder of images, renames them, and generates cap
 Run the script from the command line with the following syntax:
 
 ```
-python main.py <folder_path> --prefix <prefix> --prefix_type <subject|style>
+python captioner.py <folder_path> --prefix <prefix> --prefix_type <subject|style>
 ```
 
 Arguments:
@@ -44,7 +44,7 @@ Arguments:
 Example:
 
 ```
-python main.py ./my_images --prefix "cat_" --prefix_type subject
+python captioner.py ./my_images --prefix "cat_" --prefix_type subject
 ```
 
 This command will process all images in the `./my_images` folder, rename them with the prefix "cat\_", and generate captions focusing on the subject (in this case, cats).

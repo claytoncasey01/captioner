@@ -1,5 +1,6 @@
 import os
 import base64
+import shutil
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langchain.prompts import ChatPromptTemplate 
@@ -17,7 +18,7 @@ def load_image_as_base64(image_path: str):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-def make_langchain_call(image_path: str, prefix: str, prefix_type: str, mode: str, model_name: str ="gpt-4-vision-preview"):
+def make_langchain_call(image_path: str, prefix: str, prefix_type: str, mode: str, model_name: str ="gpt-4o"):
     image_data = load_image_as_base64(image_path)
 
     message = HumanMessage(
@@ -56,7 +57,7 @@ def make_langchain_call(image_path: str, prefix: str, prefix_type: str, mode: st
 
     if mode == "file_name":
         system_prompt += (
-            "IMPORTANT: Your caption will be used as a file name. It MUST be 256 characters or less, including spaces. "
+            "IMPORTANT: Your caption will be used as a file name. It MUST be 255 characters or less, including spaces. "
             "Do not use any characters that are invalid in file names (/, \\, :, *, ?, \", <, >, |). "
             "Make sure the caption is concise but still descriptive and includes the prefix."
         )
@@ -70,49 +71,51 @@ def make_langchain_call(image_path: str, prefix: str, prefix_type: str, mode: st
 
     model = ChatOpenAI(model=model_name)
     response = model.invoke(prompt.format_messages())
+    print("Prompt: ", prompt.format_messages())
     return response.content
 
 def sanitize_filename(filename: str):
     # Remove invalid characters
     filename = re.sub(r'[<>:"/\\|?*]', '', filename)
-    # Replace spaces with underscores
-    filename = filename.replace(' ', '_')
     # Truncate to 256 characters
-    return filename[:256]
+    return filename[:255]
 
 def process_image(args):
-    folder_path, filename, prefix, prefix_type, index, mode = args
-    file_path = os.path.join(folder_path, filename)
+    input_folder, output_folder, filename, prefix, prefix_type, index, mode = args
+    input_file_path = os.path.join(input_folder, filename)
     file_extension = os.path.splitext(filename)[1]
 
-    response = make_langchain_call(file_path, prefix, prefix_type, mode)
+    response = make_langchain_call(input_file_path, prefix, prefix_type, mode)
 
     if mode == "file_name":
-        new_filename = sanitize_filename(response) + file_extension
-        new_file_path = os.path.join(folder_path, new_filename)
-        os.rename(file_path, new_file_path)
+        new_filename = sanitize_filename(str(response)) + file_extension
+        new_file_path = os.path.join(output_folder, new_filename)
+        shutil.copy2(input_file_path, new_file_path)
         return new_filename, None
     else:
         new_filename = f"{prefix}{index:02}{file_extension}"
-        new_file_path = os.path.join(folder_path, new_filename)
-        os.rename(file_path, new_file_path)
-        response_file = os.path.join(folder_path, f"{prefix}{index:02}.txt")
+        new_file_path = os.path.join(output_folder, new_filename)
+        shutil.copy2(input_file_path, new_file_path)
+        response_file = os.path.join(output_folder, f"{prefix}{index:02}.txt")
         with open(response_file, "w") as f:
             f.write(str(response))
         return new_filename, response_file
 
-def loop_through_images_and_call_langchain(folder_path: str, prefix: str, prefix_type: str, mode: str):
-    if not os.path.isdir(folder_path):
-        print(f"The provided path '{folder_path}' is not a directory or does not exist.")
+def loop_through_images_and_call_langchain(input_folder: str, output_folder: str, prefix: str, prefix_type: str, mode: str):
+    if not os.path.isdir(input_folder):
+        print(f"The provided input path '{input_folder}' is not a directory or does not exist.")
         return
 
-    image_files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f)) and is_image_file(f)]
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    image_files = [f for f in os.listdir(input_folder) if os.path.isfile(os.path.join(input_folder, f)) and is_image_file(f)]
     image_files.sort()
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
         for index, filename in enumerate(image_files, start=1):
-            futures.append(executor.submit(process_image, (folder_path, filename, prefix, prefix_type, index, mode)))
+            futures.append(executor.submit(process_image, (input_folder, output_folder, filename, prefix, prefix_type, index, mode)))
 
         for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing images"):
             new_filename, response_file = future.result()
@@ -124,14 +127,15 @@ def main():
     load_dotenv()
     
     parser = argparse.ArgumentParser(description="Loop through all images in a folder and send them to a language model.")
-    parser.add_argument("folder_path", type=str, help="Path to the folder containing images.")
+    parser.add_argument("input_folder", type=str, help="Path to the folder containing input images.")
+    parser.add_argument("output_folder", type=str, help="Path to the folder where processed images and text files will be saved.")
     parser.add_argument("--prefix", type=str, default="", help="Prefix to prepend to the renamed image and text files.")
     parser.add_argument("--prefix_type", type=str, choices=["subject", "style"], required=True, help="Type of prefix: 'subject' or 'style'")
     parser.add_argument("--mode", type=str, choices=["text_file", "file_name"], default="text_file", help="Mode of operation: 'text_file' or 'file_name'")
     
     args = parser.parse_args()
     
-    loop_through_images_and_call_langchain(args.folder_path, args.prefix, args.prefix_type, args.mode)
+    loop_through_images_and_call_langchain(args.input_folder, args.output_folder, args.prefix, args.prefix_type, args.mode)
 
 if __name__ == "__main__":
     main()
