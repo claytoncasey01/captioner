@@ -79,12 +79,16 @@ def sanitize_filename(filename: str):
     # Truncate to 256 characters
     return filename[:255]
 
+def fix_encoding_errors(content: str):
+    return content.encode('utf-8', errors='replace').decode('utf-8')
+
 def process_image(args):
     input_folder, output_folder, filename, prefix, prefix_type, index, mode = args
     input_file_path = os.path.join(input_folder, filename)
     file_extension = os.path.splitext(filename)[1]
 
     response = make_langchain_call(input_file_path, prefix, prefix_type, mode)
+    response = fix_encoding_errors(response)
 
     if mode == "file_name":
         new_filename = sanitize_filename(str(response)) + file_extension
@@ -96,8 +100,8 @@ def process_image(args):
         new_file_path = os.path.join(output_folder, new_filename)
         shutil.copy2(input_file_path, new_file_path)
         response_file = os.path.join(output_folder, f"{prefix}{index:02}.txt")
-        with open(response_file, "w") as f:
-            f.write(str(response))
+        with open(response_file, "w", encoding='utf-8') as f:
+            f.write(response)
         return new_filename, response_file
 
 def loop_through_images_and_call_langchain(input_folder: str, output_folder: str, prefix: str, prefix_type: str, mode: str):
@@ -129,7 +133,7 @@ def main():
     parser.add_argument("input_folder", type=str, help="Path to the folder containing input images.")
     parser.add_argument("output_folder", type=str, help="Path to the folder where processed images and text files will be saved.")
     parser.add_argument("--prefix", type=str, default="", help="Prefix to prepend to the renamed image and text files.")
-    parser.add_argument("--prefix_type", type=str, choices=["subject", "style"], required=True, help="Type of prefix: 'subject' or 'style'")
+    parser.add_argument("--prefix_type", type=str, choices=["subject", "style"], default="subject", help="Type of prefix: 'subject' or 'style'")
     parser.add_argument("--mode", type=str, choices=["text_file", "file_name"], default="text_file", help="Mode of operation: 'text_file' or 'file_name'")
     
     args = parser.parse_args()
